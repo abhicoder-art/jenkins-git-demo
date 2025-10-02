@@ -2,7 +2,7 @@ import express from "express";
 
 export function getGreeting() {
   const id = process.env.BUILD_ID || "dev";
-  return `Hello from Jenkins CI/CD! Build: ${id}`;
+  return `Hello once again from Jenkins CI/CD! Build: ${id}`;
 }
 
 export function createApp() {

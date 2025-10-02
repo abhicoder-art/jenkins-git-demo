@@ -3,56 +3,46 @@ pipeline {
 
   environment {
     PORT = '3000'
-    PID_FILE = 'pid.txt'
+    PID_FILE = 'pid.txt'   // default value so it never comes through as null
   }
 
   stages {
-    stage('Checkout') {
-      steps { checkout scm }
-    }
+    stage('Checkout') { steps { checkout scm } }
 
-    stage('Install') {
-      steps {
-        // install dependencies
-        powershell 'npm ci'
-      }
-    }
+    stage('Install') { steps { powershell 'npm ci' } }
 
-    stage('Test') {
-      steps {
-        // run a tiny unit test
-        powershell 'npm test'
-      }
-    }
+    stage('Test') { steps { powershell 'npm test' } }
 
     stage('Deploy (restart local app)') {
       steps {
-        // stop existing app if running (using stored PID)
+        // Stop old process if running, then start and save PID
         powershell '''
-          if (Test-Path ${env.PID_FILE}) {
-            try {
-              $pid = Get-Content ${env.PID_FILE}
-              if ($pid) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }
-            } catch {}
-            Remove-Item ${env.PID_FILE} -ErrorAction SilentlyContinue
-          }
-        '''
+          # Resolve PID file path from env or default
+          $PidFile = $env:PID_FILE
+          if ([string]::IsNullOrWhiteSpace($PidFile)) { $PidFile = "pid.txt" }
 
-        // start app in background and store PID
-        powershell '''
-          $p = Start-Process "node" "server.js" -PassThru -RedirectStandardOutput run.log -RedirectStandardError run.log
-          $p.Id | Out-File ${env.PID_FILE} -Encoding ascii -NoNewline
+          # Stop previously running node (ignore errors)
+          if (Test-Path $PidFile) {
+            try {
+              $oldPid = Get-Content $PidFile
+              if ($oldPid) { Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue }
+            } catch {}
+            Remove-Item $PidFile -ErrorAction SilentlyContinue
+          }
+
+          # Start app in background and store PID
+          $p = Start-Process "node" "server.js" -PassThru `
+               -RedirectStandardOutput run.log -RedirectStandardError run.log
+          $p.Id | Out-File $PidFile -Encoding ascii -NoNewline
+
+          Write-Host "Started node with PID $($p.Id). Using PID file: $PidFile"
         '''
       }
     }
   }
 
   post {
-    success {
-      echo "App is (re)deployed at http://localhost:${env.PORT}"
-    }
-    failure {
-      echo "Build failed. Check Console Output."
-    }
+    success { echo "App deployed at http://localhost:${env.PORT}" }
+    failure { echo "Build failed. See console log." }
   }
 }

@@ -29,24 +29,30 @@ pipeline {
     }
 
     stage('Package') {
-      steps {
-        // Create a clean, lightweight artifact for demo purposes
-        powershell '''
-          # Make a temp folder with only what we need to run
-          Remove-Item -Recurse -Force dist  -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory dist | Out-Null
-          Copy-Item server.js,app.js,package.json package-lock.json -Destination dist -Force
-          # production deps only to keep artifact small (optional)
-          pushd dist
-          npm ci --omit=dev
-          popd
+  steps {
+    powershell '''
+      # Clean and prepare dist
+      Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+      New-Item -ItemType Directory dist | Out-Null
 
-          # Zip it
-          Remove-Item $env:ARTIFACT -ErrorAction SilentlyContinue
-          Compress-Archive -Path dist\\* -DestinationPath $env:ARTIFACT
-        '''
+      # Copy required files (use -Path with an array)
+      $files = @('server.js','app.js','package.json','package-lock.json')
+      foreach ($f in $files) {
+        if (Test-Path $f) { Copy-Item -Path $f -Destination dist -Force }
       }
-    }
+
+      # Install production deps only (keeps artifact small)
+      pushd dist
+      npm ci --omit=dev
+      popd
+
+      # Zip it up (remove old zip if present)
+      if (Test-Path $env:ARTIFACT) { Remove-Item $env:ARTIFACT -Force }
+      Compress-Archive -Path (Join-Path dist '*') -DestinationPath $env:ARTIFACT -Force
+    '''
+  }
+}
+
 
     stage('Deploy') {
       steps {
